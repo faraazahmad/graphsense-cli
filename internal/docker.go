@@ -127,7 +127,7 @@ NEO4J_BOLT_PORT=%d
 # Database Configuration
 POSTGRES_DB=%s
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=graphsense_password
+POSTGRES_PASSWORD=postgres
 
 # Neo4j Configuration
 NEO4J_AUTH=none
@@ -143,8 +143,8 @@ INDEX_FROM_SCRATCH=true
 CORS_ORIGIN=*
 RATE_LIMIT_MAX=100
 RATE_LIMIT_WINDOW=900000
-`, config.RepoPath, config.AppPort, config.PostgresPort, config.Neo4jBoltPort, 
-	strings.ReplaceAll(config.InstanceName, "-", "_")+"_db")
+`, config.RepoPath, config.AppPort, config.PostgresPort, config.Neo4jBoltPort,
+		strings.ReplaceAll(config.InstanceName, "-", "_")+"_db")
 
 	if config.CoAPIKey != "" {
 		content += fmt.Sprintf("CO_API_KEY=%s\n", config.CoAPIKey)
@@ -220,7 +220,7 @@ volumes:
     name: %s_neo4j_conf
   %s_app_repos:
     name: %s_app_repos
-`, 
+`,
 		config.InstanceName, config.InstanceName, config.InstanceName,
 		config.InstanceName, config.InstanceName, config.InstanceName, config.InstanceName, config.InstanceName, config.InstanceName,
 		config.InstanceName, config.InstanceName, config.RepoPath, config.AppPort, config.InstanceName, config.InstanceName, config.InstanceName,
@@ -236,7 +236,7 @@ volumes:
 // RunDockerCompose runs a docker-compose command
 func RunDockerCompose(args []string, envVars map[string]string) error {
 	cmd := exec.Command("docker-compose", args...)
-	
+
 	// Set environment variables
 	cmd.Env = os.Environ()
 	for key, value := range envVars {
@@ -245,18 +245,18 @@ func RunDockerCompose(args []string, envVars map[string]string) error {
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	return cmd.Run()
 }
 
 // WaitForHealthy waits for services to become healthy
 func WaitForHealthy(instanceName string, maxAttempts int) error {
 	Log.Info("Waiting for services to be healthy...")
-	
+
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		cmd := exec.Command("docker-compose", "ps")
 		cmd.Env = append(os.Environ(), fmt.Sprintf("COMPOSE_PROJECT_NAME=%s", instanceName))
-		
+
 		output, err := cmd.Output()
 		if err != nil {
 			time.Sleep(5 * time.Second)
@@ -279,13 +279,13 @@ func WaitForHealthy(instanceName string, maxAttempts int) error {
 
 // DeployConfig holds configuration for deployment
 type DeployConfig struct {
-	RepoPath         string
-	InstanceName     string
-	AppPort          int
-	PostgresPort     int
-	Neo4jBoltPort    int
-	CoAPIKey         string
-	AnthropicAPIKey  string
+	RepoPath        string
+	InstanceName    string
+	AppPort         int
+	PostgresPort    int
+	Neo4jBoltPort   int
+	CoAPIKey        string
+	AnthropicAPIKey string
 }
 
 // GetRunningInstances returns a list of running GraphSense instances
@@ -319,7 +319,7 @@ func GetPortsInUse() ([]int, error) {
 	var ports []int
 	re := regexp.MustCompile(`:(\d+)\s`)
 	matches := re.FindAllStringSubmatch(string(output), -1)
-	
+
 	for _, match := range matches {
 		if len(match) > 1 {
 			port, err := strconv.Atoi(match[1])
@@ -330,4 +330,52 @@ func GetPortsInUse() ([]int, error) {
 	}
 
 	return ports, nil
+}
+
+// LoadAPIKeys loads API keys from ~/.graphsense/.env
+func LoadAPIKeys() (coAPIKey, anthropicAPIKey string, err error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get home directory: %v", err)
+	}
+
+	envFile := filepath.Join(homeDir, ".graphsense", ".env")
+	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		return "", "", fmt.Errorf("API keys file not found: %s", envFile)
+	}
+
+	file, err := os.Open(envFile)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open API keys file: %v", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		switch key {
+		case "CO_API_KEY":
+			coAPIKey = value
+		case "ANTHROPIC_API_KEY":
+			anthropicAPIKey = value
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", "", fmt.Errorf("failed to read API keys file: %v", err)
+	}
+
+	return coAPIKey, anthropicAPIKey, nil
 }

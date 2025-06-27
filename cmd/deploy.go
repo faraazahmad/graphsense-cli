@@ -11,9 +11,7 @@ import (
 )
 
 var (
-	port            int
-	coAPIKey        string
-	anthropicAPIKey string
+	port int
 )
 
 var deployCmd = &cobra.Command{
@@ -30,17 +28,15 @@ If instance_name is not provided, it will be generated from the repository name.
 			instanceName = args[1]
 		}
 
-		return deployInstance(repoPath, instanceName, port, coAPIKey, anthropicAPIKey)
+		return deployInstance(repoPath, instanceName, port)
 	},
 }
 
 func init() {
 	deployCmd.Flags().IntVar(&port, "port", 0, "Base port for the instance (default: auto-assigned)")
-	deployCmd.Flags().StringVar(&coAPIKey, "co-api-key", "", "Cohere API key for the application")
-	deployCmd.Flags().StringVar(&anthropicAPIKey, "anthropic-api-key", "", "Anthropic API key for the application")
 }
 
-func deployInstance(repoPath, instanceName string, basePort int, coAPIKey, anthropicAPIKey string) error {
+func deployInstance(repoPath, instanceName string, basePort int) error {
 	// Validate repo path
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
 		return fmt.Errorf("repository path does not exist: %s", repoPath)
@@ -76,6 +72,12 @@ func deployInstance(repoPath, instanceName string, basePort int, coAPIKey, anthr
 	postgresPort := appPort + 100
 	neo4jBoltPort := appPort + 200
 
+	// Load API keys from ~/.graphsense/.env
+	coAPIKey, anthropicAPIKey, err := internal.LoadAPIKeys()
+	if err != nil {
+		return fmt.Errorf("failed to load API keys: %v", err)
+	}
+
 	// Create deployment configuration
 	config := &internal.DeployConfig{
 		RepoPath:         absRepoPath,
@@ -108,14 +110,19 @@ func deployInstance(repoPath, instanceName string, basePort int, coAPIKey, anthr
 		"COMPOSE_PROJECT_NAME": instanceName,
 	}
 
-	// Use the docker-compose.yml from the target repository
-	repoComposeFile := filepath.Join(absRepoPath, "docker-compose.yml")
-	if _, err := os.Stat(repoComposeFile); os.IsNotExist(err) {
-		return fmt.Errorf("docker-compose.yml not found in repository: %s", repoComposeFile)
+	// Use the docker-compose.yml from ~/oss/code-graph-rag/
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %v", err)
+	}
+	
+	composeFile := filepath.Join(homeDir, "oss", "code-graph-rag", "docker-compose.yml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yml not found at: %s", composeFile)
 	}
 
 	err = internal.RunDockerCompose([]string{
-		"-f", repoComposeFile,
+		"-f", composeFile,
 		"-f", composeOverride,
 		"--env-file", envFile,
 		"up", "-d",
@@ -127,6 +134,11 @@ func deployInstance(repoPath, instanceName string, basePort int, coAPIKey, anthr
 	// Wait for services to be healthy
 	if err := internal.WaitForHealthy(instanceName, 60); err != nil {
 		internal.Log.Warning("Health check failed, but continuing...")
+	}
+
+	// Store container information in database
+	if err := internal.StoreInstanceContainers(config); err != nil {
+		internal.Log.Warning(fmt.Sprintf("Failed to store container information: %v", err))
 	}
 
 	internal.Log.Success(fmt.Sprintf("Instance '%s' deployed successfully!", instanceName))
