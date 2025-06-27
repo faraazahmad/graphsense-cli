@@ -125,7 +125,7 @@ POSTGRES_PORT=%d
 NEO4J_BOLT_PORT=%d
 
 # Database Configuration
-POSTGRES_DB=%s
+POSTGRES_DB=graphsense
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 
@@ -143,8 +143,7 @@ INDEX_FROM_SCRATCH=true
 CORS_ORIGIN=*
 RATE_LIMIT_MAX=100
 RATE_LIMIT_WINDOW=900000
-`, config.RepoPath, config.AppPort, config.PostgresPort, config.Neo4jBoltPort,
-		strings.ReplaceAll(config.InstanceName, "-", "_")+"_db")
+`, config.RepoPath, config.AppPort, config.PostgresPort, config.Neo4jBoltPort)
 
 	if config.CoAPIKey != "" {
 		content += fmt.Sprintf("CO_API_KEY=%s\n", config.CoAPIKey)

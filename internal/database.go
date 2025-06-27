@@ -34,9 +34,21 @@ func InitDB() (*sql.DB, error) {
 	}
 
 	dbPath := filepath.Join(graphsenseDir, "instances.db")
+	
+	// Check if database file exists and create if not
+	dbExists := true
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		dbExists = false
+		Log.Info(fmt.Sprintf("Creating new database at: %s", dbPath))
+	}
+	
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
+	}
+	
+	if !dbExists {
+		Log.Info("Database file created successfully")
 	}
 
 	// Create the instances table if it doesn't exist
